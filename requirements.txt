@@ -1,0 +1,18 @@
+# Système multi-agents
+spade>=4.1,<5
+# Serveur applicatif
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic-settings>=2.4
+pyjwt>=2.9
+httpx>=0.27
+# Données
+sqlalchemy[asyncio]>=2.0
+asyncpg>=0.30
+geoalchemy2>=0.15
+alembic>=1.13
+redis>=5.0
+# Interfaces graphiques
+flet>=1.0,<2
+# Optimisation de tournées
+ortools>=9.10

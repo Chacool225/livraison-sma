@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+# Données cartographiques (volumineuses)
+donnees/osrm/*
+!donnees/osrm/.gitkeep
+# Base du serveur XMPP de développement
+*.db
+*.sqlite
+*.db-shm
+*.db-wal

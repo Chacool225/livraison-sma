@@ -1,0 +1,25 @@
+[project]
+name = "livraison-sma"
+version = "0.1.0"
+description = "Plateforme de livraison urbaine à allocation par appel d'offres (Contract Net)"
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI déclare ses dépendances par des appels dans les valeurs par défaut : c'est voulu.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]

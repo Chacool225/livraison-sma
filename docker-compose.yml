@@ -1,0 +1,44 @@
+# Services du projet. Démarrage : docker compose up -d
+# Le moteur d'itinéraires est optionnel : docker compose --profile itineraires up -d
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - donnees_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    profiles: ["itineraires"]
+    restart: unless-stopped
+    command: osrm-routed --algorithm mld /data/carte.osrm
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - ./donnees/osrm:/data
+
+volumes:
+  donnees_postgres:
