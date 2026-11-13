@@ -17,3 +17,5 @@ donnees/osrm/*
 *.db-wal
 
 *.log
+
+*.log
