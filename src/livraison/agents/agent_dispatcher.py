@@ -24,11 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from livraison.agents.protocole import (
     ACCEPT,
+    CANCEL,
     CFP,
     FAILURE,
     INFORM,
+    INFORM_IF,
     INFORM_REF,
     PROPOSE,
+    QUERY_IF,
     QUERY_REF,
     REFUSE,
     REJECT,
@@ -75,6 +78,8 @@ class DispatcherAgent(Agent):
         self.sortie: asyncio.Queue[Resultat] = asyncio.Queue()
         self.conversations: dict[str, asyncio.Queue[Message]] = {}
         self.exclusions: dict[str, set[str]] = {}  # commande -> livreurs déjà essayés
+        self.attributions: dict[str, str] = {}  # commande -> adresse du livreur qui l'a acceptée
+        self._alertes_gps: set[str] = set()  # courses déjà signalées au répartiteur
         self._taches: set[asyncio.Task] = set()
         self._postier: DispatcherAgent.Routeur | None = None
 
@@ -194,6 +199,7 @@ class DispatcherAgent(Agent):
                     await commandes.attribuer_a(
                         session, commande_id, gagnant["livreur_id"], tentative, auteur
                     )
+                    self.attributions[cid] = jids[gagnant["livreur_id"]]
                     return Resultat(cid, "attribuee", gagnant["livreur_id"], essai)
                 resultat_offre = (
                     ResultatOffre.DECLINEE if reponse == "decline" else ResultatOffre.EXPIREE
@@ -302,6 +308,7 @@ class DispatcherAgent(Agent):
         self, session, commande_id: uuid.UUID, livreur_id: str, motif: str | None
     ):
         commande = await commandes.charger(session, commande_id)
+        await self._retirer_course(str(commande_id))
         if commande.etat == EtatCommande.ATTRIBUEE:
             # Pas encore enlevée : on cherche un autre livreur.
             self.exclusions.setdefault(str(commande_id), set()).add(livreur_id)
@@ -325,6 +332,70 @@ class DispatcherAgent(Agent):
                 str(self.jid),
                 {"raison": "echec_apres_enlevement"},
             )
+
+    async def _retirer_course(self, cid: str) -> None:
+        """Prévient le livreur concerné que la course ne lui appartient plus (s'il est encore là)."""
+        jid = self.attributions.pop(cid, None)
+        if jid is not None:
+            await self._envoyer(jid, CANCEL, cid)
+
+    # ------------------------------------------------------------------ perte du signal GPS
+    async def _interroger_ages(self, livreur_ids: set[str]) -> dict[str, float | None]:
+        """Âge de la dernière position de chaque livreur (None : absent de l'annuaire)."""
+        file = self.conversations["controle-gps"] = asyncio.Queue()
+        try:
+            await self._envoyer(
+                self.annuaire_jid, QUERY_IF, "controle-gps", livreur_ids=sorted(livreur_ids)
+            )
+            echeance = time.monotonic() + 5
+            while (msg := await self._prochain(file, echeance)) is not None:
+                if msg.get_metadata("performative") == INFORM_IF:
+                    return decoder(msg.body)["ages"]
+            return {}
+        finally:
+            self.conversations.pop("controle-gps", None)
+
+    async def controler_signaux(self) -> None:
+        """Vérifie que les livreurs ayant une course en cours donnent encore signe de vie.
+
+        - Course pas encore enlevée : réattribution à un autre livreur.
+        - Colis déjà en main : on ne peut pas réattribuer, le répartiteur est alerté (une seule fois).
+        """
+        async with self.fabrique() as session:
+            reglages = await commandes.lire_reglages(session, self.reglages_forces)
+            actives = await commandes.courses_actives(session)
+        if not actives:
+            return
+        ages = await self._interroger_ages({str(livreur) for _, _, livreur in actives})
+        if not ages:
+            return  # l'annuaire n'a pas répondu : on ne juge personne sur un silence du système
+        limite = reglages["perte_signal_s"]
+        for commande_id, etat, livreur_uuid in actives:
+            cid, livreur_id = str(commande_id), str(livreur_uuid)
+            age = ages.get(livreur_id)
+            if age is not None and age <= limite:
+                self._alertes_gps.discard(cid)
+                continue
+            detail = {"livreur_id": livreur_id, "age_position_s": age, "limite_s": limite}
+            async with self.fabrique() as session:
+                if etat == EtatCommande.ATTRIBUEE:
+                    await commandes.journaliser(
+                        session, commande_id, "perte_signal_gps", str(self.jid), detail
+                    )
+                    self._alertes_gps.discard(cid)
+                    await self._gerer_incident(session, commande_id, livreur_id, "perte_signal_gps")
+                elif cid not in self._alertes_gps:
+                    self._alertes_gps.add(cid)
+                    await commandes.journaliser(
+                        session, commande_id, "perte_signal_gps", str(self.jid), detail
+                    )
+                    await commandes.journaliser(
+                        session,
+                        commande_id,
+                        "alerte_repartiteur",
+                        str(self.jid),
+                        {"raison": "signal_perdu_apres_enlevement", **detail},
+                    )
 
     def _lancer(self, commande_id: uuid.UUID) -> None:
         tache = asyncio.create_task(self.attribuer(commande_id))
@@ -358,7 +429,20 @@ class DispatcherAgent(Agent):
                 return
             self.agent._lancer(commande_id)
 
+    class Surveillant(CyclicBehaviour):
+        """Contrôle périodique des signaux GPS des courses en cours."""
+
+        async def run(self):
+            async with self.agent.fabrique() as session:
+                reglages = await commandes.lire_reglages(session, self.agent.reglages_forces)
+            await asyncio.sleep(reglages["controle_gps_intervalle_s"])
+            try:
+                await self.agent.controler_signaux()
+            except Exception:  # noqa: BLE001 - la surveillance ne doit jamais s'arrêter
+                journal.exception("Contrôle des signaux GPS en erreur")
+
     async def setup(self):
         self._postier = self.Routeur()
         self.add_behaviour(self._postier)
         self.add_behaviour(self.Ordonnanceur())
+        self.add_behaviour(self.Surveillant())

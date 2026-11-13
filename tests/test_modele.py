@@ -8,11 +8,13 @@ from livraison.db.modeles import Commande, ModePaiement, Parametre, Role, Taille
 
 async def test_parametres_de_depart(session):
     valeurs = {p.cle: p.valeur for p in await session.scalars(select(Parametre))}
-    assert len(valeurs) == 11
+    assert len(valeurs) == 13
     assert valeurs["penalite_charge"] == 3
     assert valeurs["delai_confirmation_s"] == 30
     assert valeurs["delai_relance_s"] == 5
     assert valeurs["candidats_max"] == 20
+    assert valeurs["perte_signal_s"] == 120
+    assert valeurs["controle_gps_intervalle_s"] == 15
 
 
 async def test_commande_avec_coordonnees_et_numero(session):

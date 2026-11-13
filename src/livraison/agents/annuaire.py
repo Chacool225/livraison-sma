@@ -7,7 +7,16 @@ from dataclasses import dataclass
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 
-from livraison.agents.protocole import CANCEL, INFORM_REF, QUERY_REF, SUBSCRIBE, decoder, encoder
+from livraison.agents.protocole import (
+    CANCEL,
+    INFORM_IF,
+    INFORM_REF,
+    QUERY_IF,
+    QUERY_REF,
+    SUBSCRIBE,
+    decoder,
+    encoder,
+)
 from livraison.modele.geo import Point, distance_m
 
 ORDRE_TAILLES = {"petit": 0, "moyen": 1, "grand": 2}
@@ -24,9 +33,15 @@ class Entree:
 
 
 class AnnuaireAgent(Agent):
-    def __init__(self, jid, mot_de_passe, **options):
+    def __init__(self, jid, mot_de_passe, *, horloge=time.monotonic, **options):
         super().__init__(jid, mot_de_passe, **options)
+        self.horloge = horloge
         self.entrees: dict[str, Entree] = {}
+
+    def age_position_s(self, livreur_id: str) -> float | None:
+        """Secondes écoulées depuis la dernière position reçue ; None si le livreur est absent."""
+        entree = self.entrees.get(livreur_id)
+        return None if entree is None else round(self.horloge() - entree.mis_a_jour, 2)
 
     def chercher(self, point: Point, rayon_m: float, taille: str, limite: int) -> list[dict]:
         """Livreurs en ligne dans le rayon, compatibles avec la taille du colis, du plus proche
@@ -57,10 +72,17 @@ class AnnuaireAgent(Agent):
                     vehicule=corps["vehicule"],
                     taille_max=corps["taille_max"],
                     position=tuple(corps["position"]),
-                    mis_a_jour=time.monotonic(),
+                    mis_a_jour=annuaire.horloge(),
                 )
             elif perf == CANCEL:
                 annuaire.entrees.pop(corps["livreur_id"], None)
+            elif perf == QUERY_IF:
+                reponse = msg.make_reply()
+                reponse.set_metadata("performative", INFORM_IF)
+                reponse.body = encoder(
+                    ages={i: annuaire.age_position_s(i) for i in corps["livreur_ids"]}
+                )
+                await self.send(reponse)
             elif perf == QUERY_REF:
                 candidats = annuaire.chercher(
                     tuple(corps["point"]), corps["rayon_m"], corps["taille"], corps["limite"]

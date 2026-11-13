@@ -134,3 +134,22 @@ def test_une_proposition_reserve_la_place():
     assert agent.motif_de_refus(PLATEAU, "petit", 3000, 60) is None
     agent.reservations["c2"] = horloge()
     assert agent.motif_de_refus(PLATEAU, "petit", 3000, 60) == "sature"
+
+
+async def test_detour_calcule_comme_l_insertion_d_un_arret():
+    """Détour = durée(position -> enlèvement -> prochain arrêt) - durée(position -> prochain arrêt)."""
+    position, enlevement, prochain = A_, PLATEAU, COCODY
+    durees = {(position, enlevement): 600, (enlevement, prochain): 300, (position, prochain): 700}
+
+    class Fixe:
+        async def duree_s(self, depart, arrivee, vehicule):
+            return durees[(depart, arrivee)]
+
+    agent, _ = _livreur(itineraire=Fixe())
+    agent.courses["c1"] = Course(
+        "c1", (0.0, 0.0), prochain, etat="enlevee"
+    )  # prochain arrêt : COCODY
+    cout, eta = await agent.calculer_offre(enlevement, 3)
+    assert eta == 600
+    # détour = 600 + 300 - 700 = 200 s ; coût = (600 + 200) / 60 + 3 x 1 course = 16,33
+    assert cout == 16.33

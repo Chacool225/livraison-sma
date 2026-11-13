@@ -4,35 +4,10 @@ serveur XMPP (spade run --memory) ; sinon ils sont ignorés."""
 import asyncio
 import uuid
 
-import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
 from livraison.db.modeles import EtatCommande as E
 from livraison.db.modeles import ResultatOffre as R
 from livraison.modele.geo import distance_m
-from systeme import Systeme
-
-ENLEVEMENT = (-4.0267, 5.3200)  # Plateau
-LIVRAISON = (-3.9870, 5.3600)  # Cocody
-A = (-4.0250, 5.3210)  # ~0,2 km de l'enlèvement
-B = (-4.0100, 5.3300)  # ~2 km
-C = (-3.9800, 5.3700)  # ~7,6 km : hors du rayon initial de 3 km
-
-
-@pytest.fixture
-async def creer_systeme(moteur, xmpp):
-    fabrique = async_sessionmaker(moteur, expire_on_commit=False)
-    crees: list[Systeme] = []
-
-    async def creer(**reglages) -> Systeme:
-        systeme = Systeme(fabrique, reglages)
-        await systeme.demarrer()
-        crees.append(systeme)
-        return systeme
-
-    yield creer
-    for systeme in crees:
-        await systeme.arreter()
+from systeme import ENLEVEMENT, LIVRAISON, A, B, C
 
 
 async def test_attribution_au_livreur_le_plus_proche(creer_systeme):

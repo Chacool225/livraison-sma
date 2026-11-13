@@ -27,6 +27,11 @@ from livraison.db.modeles import (
 )
 
 _numeros = itertools.count(1)
+ENLEVEMENT = (-4.0267, 5.3200)  # Plateau
+LIVRAISON = (-3.9870, 5.3600)  # Cocody
+A = (-4.0250, 5.3210)  # ~0,2 km de l'enlèvement
+B = (-4.0100, 5.3300)  # ~2 km
+C = (-3.9800, 5.3700)  # ~7,6 km : hors du rayon initial de 3 km
 REGLAGES_RAPIDES = {"delai_offres_s": 1.0, "delai_confirmation_s": 2.0, "delai_relance_s": 0.3}
 
 

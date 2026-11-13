@@ -34,3 +34,7 @@ SUBSCRIBE = "subscribe"  # un livreur se déclare (ou met à jour sa position)
 CANCEL = "cancel"  # un livreur se retire de l'annuaire
 QUERY_REF = "query-ref"  # le dispatcher demande les livreurs proches
 INFORM_REF = "inform-ref"  # réponse de l'annuaire
+QUERY_IF = (
+    "query-if"  # le dispatcher demande depuis quand des livreurs n'ont pas donné signe de vie
+)
+INFORM_IF = "inform-if"  # réponse de l'annuaire : âge de la dernière position de chacun
