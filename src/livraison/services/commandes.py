@@ -31,6 +31,8 @@ DEFAUTS = {
     "age_max_position_s": 60,
     "delai_relance_s": 5,
     "candidats_max": 20,
+    "perte_signal_s": 120,
+    "controle_gps_intervalle_s": 15,
 }
 
 _HORODATAGE_PAR_ETAT = {
@@ -235,3 +237,16 @@ async def derniere_tentative(session: AsyncSession, commande_id: uuid.UUID) -> i
     return await session.scalar(
         select(func.coalesce(func.max(Offre.tentative), 0)).where(Offre.commande_id == commande_id)
     )
+
+
+async def courses_actives(session: AsyncSession) -> list[tuple[uuid.UUID, EtatCommande, uuid.UUID]]:
+    """(commande, état, livreur) de toutes les courses confiées à un livreur et pas encore livrées."""
+    lignes = await session.execute(
+        select(Commande.id, Commande.etat, Commande.livreur_id).where(
+            Commande.etat.in_(
+                [EtatCommande.ATTRIBUEE, EtatCommande.ENLEVEE, EtatCommande.EN_LIVRAISON]
+            ),
+            Commande.livreur_id.is_not(None),
+        )
+    )
+    return [tuple(ligne) for ligne in lignes]

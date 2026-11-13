@@ -119,3 +119,22 @@ def _xmpp_actif() -> bool:
 def xmpp():
     if not _xmpp_actif():
         pytest.skip("serveur XMPP absent (lancer : spade run --memory)")
+
+
+@pytest.fixture
+async def creer_systeme(moteur, xmpp):
+    """Fabrique un banc d'essai d'agents (annuaire + dispatcher), arrêté proprement à la fin."""
+    from systeme import Systeme
+
+    fabrique = async_sessionmaker(moteur, expire_on_commit=False)
+    crees = []
+
+    async def creer(**reglages):
+        systeme = Systeme(fabrique, reglages)
+        await systeme.demarrer()
+        crees.append(systeme)
+        return systeme
+
+    yield creer
+    for systeme in crees:
+        await systeme.arreter()

@@ -291,11 +291,23 @@ class LivreurAgent(Agent):
                 self.agent.reservations.pop(msg.thread, None)
                 self.agent._proposees.pop(msg.thread, None)
 
+    class RecevoirAnnulation(CyclicBehaviour):
+        """Le dispatcher retire une course (livreur injoignable, commande annulée...)."""
+
+        async def run(self):
+            msg = await self.receive(timeout=10)
+            if msg is not None:
+                livreur = self.agent
+                livreur.courses.pop(msg.thread, None)
+                livreur.reservations.pop(msg.thread, None)
+                livreur._proposees.pop(msg.thread, None)
+
     async def setup(self):
         for comportement, performative in (
             (self.RepondreAuxAppels(), CFP),
             (self.RecevoirAcceptation(), ACCEPT),
             (self.RecevoirRejet(), REJECT),
+            (self.RecevoirAnnulation(), CANCEL),
         ):
             modele = Template()
             modele.set_metadata("performative", performative)

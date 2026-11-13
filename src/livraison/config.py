@@ -19,7 +19,9 @@ class Parametres(BaseSettings):
     xmpp_domaine: str = "localhost"
     xmpp_mot_de_passe_agents: str = "changez-moi"
 
-    osrm_url: str = "http://localhost:5000"
+    osrm_url: str = "http://127.0.0.1:5000"
+    # "droite_ligne" : approximation sans service externe ; "osrm" : durées réelles (avec repli).
+    itineraire: str = "droite_ligne"
 
     api_host: str = "127.0.0.1"
     api_port: int = 8000

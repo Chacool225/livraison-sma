@@ -394,3 +394,29 @@ de test de non-régression (les 6 attributions du TP).
 Les tests `tests/test_attribution.py` rejouent des scénarios complets avec de vrais agents :
 plus proche, égalité, commandes simultanées, saturation et alerte, rayon élargi, refus et silence
 du livreur, position trop ancienne, panne avant enlèvement, cycle de vie complet.
+
+## Étape 5 : itinéraires réels (OSRM) et perte du signal GPS
+
+**Itinéraires.** Par défaut (`ITINERAIRE=droite_ligne` dans `.env`), les durées sont estimées à vol
+d'oiseau. Pour des durées réelles sur le réseau routier d'Abidjan :
+
+```powershell
+.\scripts\preparer_osrm.ps1                          # une seule fois : télécharge et prépare la carte
+docker compose --profile itineraires up -d
+python scripts\verifier_osrm.py                      # doit afficher [OK]
+```
+
+Puis mettre `ITINERAIRE=osrm` dans `.env`. Si le moteur tombe en panne, le système bascule
+automatiquement sur l'estimation à vol d'oiseau (précision réduite, mais le service continue).
+Les durées OSRM sont celles d'une circulation fluide, corrigées selon le véhicule ; le trafic
+n'est pas modélisé.
+
+**Signal GPS.** Le dispatcher vérifie toutes les `controle_gps_intervalle_s` secondes (15 par
+défaut) la dernière position de chaque livreur ayant une course en cours. Sans position depuis
+`perte_signal_s` secondes (120 par défaut) : si le colis n'est pas encore enlevé, la course est
+réattribuée ; sinon le répartiteur est alerté une seule fois. L'application du livreur devra donc
+envoyer sa position au moins toutes les 30 secondes environ. Ces deux réglages se changent dans la
+table `parametres`.
+
+Mettre la base à jour avec `alembic upgrade head` (migration 0003), puis `pytest` : 77 tests avec
+`spade run --memory`. La liste complète de vérification est dans `docs/RECETTE.md`.
