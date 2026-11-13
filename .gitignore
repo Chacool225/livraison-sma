@@ -15,3 +15,5 @@ donnees/osrm/*
 *.sqlite
 *.db-shm
 *.db-wal
+
+*.log

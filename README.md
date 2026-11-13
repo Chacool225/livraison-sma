@@ -370,3 +370,27 @@ Ouvrir http://127.0.0.1:8000/docs : la documentation interactive de l'API.
 - **Faire évoluer le modèle** : modifier `src/livraison/db/modeles.py`, puis
   `alembic revision --autogenerate -m "description"`, relire le fichier généré, et
   `alembic upgrade head`.
+
+## Étape 4 : les agents du lot 2 (Contract Net complet, branché sur la base)
+
+Mettre la base à jour (nouveaux réglages), puis lancer le serveur XMPP **en mémoire** (aucun
+compte périmé d'une fois sur l'autre) :
+
+```powershell
+alembic upgrade head
+spade run --memory          # terminal 1, à laisser ouvert
+pytest                      # terminal 2 : 61 tests ; sans le serveur XMPP, 13 sont ignorés
+```
+
+| Agent | Fichier | Rôle |
+|---|---|---|
+| Annuaire | `agents/annuaire.py` | Connaît les livreurs en ligne et leur position ; renvoie ceux qui sont dans un rayon |
+| Livreur | `agents/agent_livreur.py` | Refuse avec une raison (hors ligne, saturé, position ancienne, hors zone, colis trop grand), calcule son coût, réserve sa place, demande confirmation au livreur humain, signale les étapes |
+| Dispatcher | `agents/agent_dispatcher.py` | Une conversation par commande, en parallèle ; classe les offres, confirme, relance, réattribue |
+
+Les agents du TP (grille) restent dans `agents/livreur.py` et `agents/dispatcher.py` : ils servent
+de test de non-régression (les 6 attributions du TP).
+
+Les tests `tests/test_attribution.py` rejouent des scénarios complets avec de vrais agents :
+plus proche, égalité, commandes simultanées, saturation et alerte, rayon élargi, refus et silence
+du livreur, position trop ancienne, panne avant enlèvement, cycle de vie complet.
