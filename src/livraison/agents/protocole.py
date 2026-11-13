@@ -27,3 +27,10 @@ def encoder(**champs) -> str:
 
 def decoder(corps: str | None) -> dict:
     return json.loads(corps) if corps else {}
+
+
+# Dialogue avec l'Annuaire (pages jaunes des livreurs en ligne)
+SUBSCRIBE = "subscribe"  # un livreur se déclare (ou met à jour sa position)
+CANCEL = "cancel"  # un livreur se retire de l'annuaire
+QUERY_REF = "query-ref"  # le dispatcher demande les livreurs proches
+INFORM_REF = "inform-ref"  # réponse de l'annuaire

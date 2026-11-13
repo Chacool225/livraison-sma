@@ -105,3 +105,17 @@ async def client(moteur, monkeypatch):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
     app.dependency_overrides.clear()
+
+
+def _xmpp_actif() -> bool:
+    try:
+        with socket.create_connection((parametres.xmpp_host, parametres.xmpp_port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+@pytest.fixture
+def xmpp():
+    if not _xmpp_actif():
+        pytest.skip("serveur XMPP absent (lancer : spade run --memory)")
