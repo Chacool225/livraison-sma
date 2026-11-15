@@ -101,3 +101,28 @@ async def test_l_annuaire_donne_l_age_des_positions(creer_systeme):
     await asyncio.sleep(0.2)
     assert s.annuaire.age_position_s(s.id("a")) < 0.5
     assert s.annuaire.age_position_s("inconnu") is None
+
+
+async def test_livreur_deconnecte_est_remplace_apres_le_delai_de_tolerance(creer_systeme):
+    """Un livreur absent de l'annuaire (déconnecté, serveur redémarré) a le temps de revenir ;
+    passé le délai, sa course est confiée à un autre."""
+    s = await creer_systeme(**REGLAGES)
+    a = await s.livreur("a", A)
+    b = await s.livreur("b", B)
+    await s.attendre_annuaire(2)
+
+    async with garder_signal(b, B):
+        cid = await s.commande(ENLEVEMENT, LIVRAISON)
+        await s.soumettre(cid)
+        (premier,) = await s.resultats(1)
+        assert premier.livreur_id == s.id("a")
+
+        await a.passer_hors_ligne()  # a disparaît de l'annuaire, la course lui reste affectée
+        await asyncio.sleep(0.8)  # encore dans le délai de tolérance (1,5 s)
+        assert str((await s.lire(cid)).livreur_id) == s.id("a")
+
+        (second,) = await s.resultats(1, timeout=20)
+
+    assert second.livreur_id == s.id("b")
+    assert "reattribution" in await s.evenements(cid)
+    await attendre(lambda: not a.courses)

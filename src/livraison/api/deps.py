@@ -2,11 +2,12 @@
 
 import uuid
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from livraison.db.modeles import Role, StatutCompte, Utilisateur
+from livraison.agents.flotte import Flotte
+from livraison.db.modeles import Livreur, Role, StatutCompte, StatutValidation, Utilisateur
 from livraison.db.session import obtenir_session
 from livraison.services import securite
 
@@ -50,3 +51,29 @@ def exiger_roles(*roles: Role):
 # Dépendances prêtes à l'emploi, à utiliser dans les routes : Depends(LIVREUR_SEUL), etc.
 LIVREUR_SEUL = exiger_roles(Role.LIVREUR)
 ADMIN_SEUL = exiger_roles(Role.ADMINISTRATEUR)
+CLIENT_SEUL = exiger_roles(Role.CLIENT)
+SUPERVISEUR = exiger_roles(Role.ADMINISTRATEUR, Role.REPARTITEUR)
+
+
+def flotte_facultative(request: Request) -> Flotte | None:
+    """Pour les lectures, qui restent possibles même si les agents sont arrêtés."""
+    return getattr(request.app.state, "flotte", None)
+
+
+def obtenir_flotte(request: Request) -> Flotte:
+    """Les agents (attribution des courses). Absents si le serveur XMPP n'était pas joignable."""
+    flotte = getattr(request.app.state, "flotte", None)
+    if flotte is None:
+        raise HTTPException(503, "Le service d'attribution des courses est indisponible.")
+    return flotte
+
+
+async def livreur_valide(
+    utilisateur: Utilisateur = Depends(LIVREUR_SEUL),
+    session: AsyncSession = Depends(obtenir_session),
+) -> Livreur:
+    """Un livreur ne travaille qu'une fois son dossier validé par l'administrateur."""
+    livreur = await session.get(Livreur, utilisateur.id)
+    if livreur is None or livreur.statut_validation != StatutValidation.VALIDE:
+        raise HTTPException(403, "Votre dossier de livreur doit d'abord être validé.")
+    return livreur

@@ -31,6 +31,8 @@ DEFAUTS = {
     "age_max_position_s": 60,
     "delai_relance_s": 5,
     "candidats_max": 20,
+    "tarif_fixe_xof": 500,
+    "tarif_km_xof": 150,
     "perte_signal_s": 120,
     "controle_gps_intervalle_s": 15,
 }
@@ -250,3 +252,42 @@ async def courses_actives(session: AsyncSession) -> list[tuple[uuid.UUID, EtatCo
         )
     )
     return [tuple(ligne) for ligne in lignes]
+
+
+async def etat_de(session: AsyncSession, commande_id: uuid.UUID) -> EtatCommande | None:
+    return await session.scalar(select(Commande.etat).where(Commande.id == commande_id))
+
+
+async def a_reprendre(session: AsyncSession) -> list[uuid.UUID]:
+    """Commandes dont la recherche de livreur n'était pas terminée (au redémarrage du serveur)."""
+    lignes = await session.scalars(
+        select(Commande.id)
+        .where(Commande.etat.in_([EtatCommande.VALIDEE, EtatCommande.EN_RECHERCHE]))
+        .order_by(Commande.cree_le)
+    )
+    return list(lignes)
+
+
+async def courses_du_livreur(session: AsyncSession, livreur_id: uuid.UUID) -> list[dict]:
+    """Courses confiées à ce livreur et pas encore terminées, avec leurs coordonnées."""
+    lignes = await session.execute(
+        select(
+            Commande.id,
+            Commande.etat,
+            func.ST_X(cast(Commande.point_enlevement, Geometry)),
+            func.ST_Y(cast(Commande.point_enlevement, Geometry)),
+            func.ST_X(cast(Commande.point_livraison, Geometry)),
+            func.ST_Y(cast(Commande.point_livraison, Geometry)),
+        )
+        .where(
+            Commande.livreur_id == livreur_id,
+            Commande.etat.in_(
+                [EtatCommande.ATTRIBUEE, EtatCommande.ENLEVEE, EtatCommande.EN_LIVRAISON]
+            ),
+        )
+        .order_by(Commande.attribuee_le)
+    )
+    return [
+        {"commande_id": str(c), "etat": e, "enlevement": (a, b), "livraison": (x, y)}
+        for c, e, a, b, x, y in lignes
+    ]

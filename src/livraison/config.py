@@ -31,6 +31,8 @@ class Parametres(BaseSettings):
     # "dev" : le code SMS est renvoyé dans la réponse de l'API (pas de vrai SMS).
     # Toute autre valeur : le code n'est jamais renvoyé et les secrets par défaut sont refusés.
     environnement: str = "dev"
+    # Démarrer l'annuaire et le dispatcher avec l'API (nécessite le serveur XMPP : spade run).
+    agents_actifs: bool = True
     code_validite_minutes: int = 5
     code_tentatives_max: int = 5
     codes_max_par_10_min: int = 5

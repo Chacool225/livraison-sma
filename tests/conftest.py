@@ -3,6 +3,7 @@
 sans lui, ils sont ignorés (docker compose up -d)."""
 
 import asyncio
+import contextlib
 import socket
 from pathlib import Path
 
@@ -138,3 +139,47 @@ async def creer_systeme(moteur, xmpp):
     yield creer
     for systeme in crees:
         await systeme.arreter()
+
+
+@pytest.fixture
+async def creer_api(moteur, xmpp, monkeypatch):
+    """Fabrique l'API complète avec ses agents (annuaire, dispatcher) sur la base de test.
+    Appelable plusieurs fois (simule un redémarrage du serveur)."""
+    from types import SimpleNamespace
+
+    from livraison.agents.flotte import Flotte
+    from systeme import REGLAGES_RAPIDES
+
+    monkeypatch.setattr(parametres, "environnement", "dev")  # l'API renvoie le code SMS
+    fabrique = async_sessionmaker(moteur, expire_on_commit=False)
+    flottes = []
+
+    async def session_de_test():
+        async with fabrique() as session:
+            yield session
+
+    app.dependency_overrides[obtenir_session] = session_de_test
+    client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    api = SimpleNamespace(client=client, fabrique=fabrique, flotte=None)
+
+    async def creer(**reglages):
+        import uuid
+
+        flotte = Flotte(
+            fabrique,
+            reglages={**REGLAGES_RAPIDES, "delai_confirmation_s": 6.0, **reglages},
+            suffixe=uuid.uuid4().hex[:6],
+        )
+        await flotte.demarrer()
+        flottes.append(flotte)
+        app.state.flotte = flotte
+        api.flotte = flotte
+        return api
+
+    yield creer
+    await client.aclose()
+    app.dependency_overrides.clear()
+    app.state.flotte = None
+    for flotte in flottes:
+        with contextlib.suppress(Exception):  # une flotte déjà arrêtée par le test
+            await flotte.arreter()

@@ -39,6 +39,11 @@ def generer_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def generer_code_remise() -> str:
+    """Code à 4 chiffres remis au destinataire, que le livreur doit saisir à la livraison."""
+    return f"{secrets.randbelow(10_000):04d}"
+
+
 def hacher_code(telephone: str, code: str) -> str:
     """Empreinte du code, liée au numéro : le code lui-même n'est jamais stocké."""
     message = f"{telephone}:{code}".encode()

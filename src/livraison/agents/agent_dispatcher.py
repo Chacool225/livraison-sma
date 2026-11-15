@@ -39,6 +39,7 @@ from livraison.agents.protocole import (
     encoder,
 )
 from livraison.db.modeles import EtatCommande, ResultatOffre
+from livraison.modele.etats import TransitionInterdite
 from livraison.services import commandes
 
 journal = logging.getLogger("livraison.dispatcher")
@@ -80,6 +81,9 @@ class DispatcherAgent(Agent):
         self.exclusions: dict[str, set[str]] = {}  # commande -> livreurs déjà essayés
         self.attributions: dict[str, str] = {}  # commande -> adresse du livreur qui l'a acceptée
         self._alertes_gps: set[str] = set()  # courses déjà signalées au répartiteur
+        self._absents_depuis: dict[
+            str, float
+        ] = {}  # livreur -> instant où il a disparu de l'annuaire
         self._taches: set[asyncio.Task] = set()
         self._postier: DispatcherAgent.Routeur | None = None
 
@@ -145,6 +149,8 @@ class DispatcherAgent(Agent):
         for essai in range(1, tentatives_max + 1):
             tentative = base + essai  # numéro de tour unique, qui continue après une réattribution
             async with self.fabrique() as session:
+                if await commandes.etat_de(session, commande_id) == EtatCommande.ANNULEE:
+                    return Resultat(cid, "annulee")  # le client a annulé pendant la recherche
                 await commandes.noter_rayon(session, commande_id, rayon, tentative)
 
             candidats = [
@@ -196,10 +202,15 @@ class DispatcherAgent(Agent):
             )
             async with self.fabrique() as session:
                 if reponse == "confirme":
-                    await commandes.attribuer_a(
-                        session, commande_id, gagnant["livreur_id"], tentative, auteur
-                    )
                     self.attributions[cid] = jids[gagnant["livreur_id"]]
+                    try:
+                        await commandes.attribuer_a(
+                            session, commande_id, gagnant["livreur_id"], tentative, auteur
+                        )
+                    except TransitionInterdite:
+                        # Annulée pendant la confirmation : on libère le livreur qui l'avait prise.
+                        await self._retirer_course(cid)
+                        return Resultat(cid, "annulee")
                     return Resultat(cid, "attribuee", gagnant["livreur_id"], essai)
                 resultat_offre = (
                     ResultatOffre.DECLINEE if reponse == "decline" else ResultatOffre.EXPIREE
@@ -333,6 +344,10 @@ class DispatcherAgent(Agent):
                 {"raison": "echec_apres_enlevement"},
             )
 
+    async def annuler(self, commande_id: uuid.UUID) -> None:
+        """La commande a été annulée : le livreur qui l'avait acceptée en est prévenu."""
+        await self._retirer_course(str(commande_id))
+
     async def _retirer_course(self, cid: str) -> None:
         """Prévient le livreur concerné que la course ne lui appartient plus (s'il est encore là)."""
         jid = self.attributions.pop(cid, None)
@@ -370,10 +385,19 @@ class DispatcherAgent(Agent):
         if not ages:
             return  # l'annuaire n'a pas répondu : on ne juge personne sur un silence du système
         limite = reglages["perte_signal_s"]
+        maintenant = time.monotonic()
         for commande_id, etat, livreur_uuid in actives:
             cid, livreur_id = str(commande_id), str(livreur_uuid)
             age = ages.get(livreur_id)
-            if age is not None and age <= limite:
+            if age is None:
+                # Absent de l'annuaire (déconnecté, ou serveur redémarré) : même délai de tolérance
+                # qu'une position qui n'est plus mise à jour, pour lui laisser le temps de revenir.
+                depuis = self._absents_depuis.setdefault(livreur_id, maintenant)
+                perdu = maintenant - depuis > limite
+            else:
+                self._absents_depuis.pop(livreur_id, None)
+                perdu = age > limite
+            if not perdu:
                 self._alertes_gps.discard(cid)
                 continue
             detail = {"livreur_id": livreur_id, "age_position_s": age, "limite_s": limite}

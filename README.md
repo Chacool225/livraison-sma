@@ -420,3 +420,42 @@ table `parametres`.
 
 Mettre la base à jour avec `alembic upgrade head` (migration 0003), puis `pytest` : 77 tests avec
 `spade run --memory`. La liste complète de vérification est dans `docs/RECETTE.md`.
+
+## Étape 6 : l'API reliée aux agents (le parcours client -> livreur)
+
+L'API démarre maintenant l'Annuaire et le Dispatcher, crée l'agent d'un livreur quand il se met
+en ligne, et fait passer les décisions des humains (accepter une course, signaler l'enlèvement)
+par des appels HTTP. Il faut donc le serveur XMPP **avant** l'API :
+
+```powershell
+spade run --memory                       # terminal 1
+python -m livraison.api                  # terminal 2  (ou : uvicorn livraison.api.main:app --reload)
+python scripts\creer_admin.py "07 00 00 00 00" "Admin"      # une seule fois
+python scripts\demo_parcours.py          # terminal 3 : joue tout le parcours
+```
+
+Sous Windows, préférer `python -m livraison.api` (ou `uvicorn ... --reload`) : ils imposent la boucle
+d'événements avec laquelle les agents sont testés. Si le serveur XMPP est absent, l'API démarre quand
+même (comptes, lectures) mais refuse les commandes (503) ; `GET /sante` indique `"agents": false`.
+`AGENTS_ACTIFS=false` dans `.env` désactive les agents.
+
+| Qui | Route | Rôle |
+|---|---|---|
+| Client | `POST /commandes` | Calcule le prix, valide (espèces), lance la recherche ; renvoie le `code_remise` (une seule fois) |
+| Client | `GET /commandes`, `GET /commandes/{id}` | Suivi : état, prix, livreur, position du livreur |
+| Client | `POST /commandes/{id}/annulation` | Possible tant que le colis n'est pas enlevé |
+| Livreur | `POST /livreurs/moi/en-ligne` / `hors-ligne` | Crée / supprime son agent (dossier validé exigé) |
+| Livreur | `PUT /livreurs/moi/position` | À envoyer au moins toutes les 30 s environ |
+| Livreur | `GET /livreurs/moi/courses` | Propositions à confirmer (avec compte à rebours) et courses en cours |
+| Livreur | `POST /livreurs/moi/courses/{id}/reponse` | Accepter ou décliner |
+| Livreur | `POST /livreurs/moi/courses/{id}/etape` | `enlevee`, `en_livraison`, `livree` (avec le code de remise), `echec` |
+| Supervision | `GET /admin/commandes`, `GET /admin/agents` | Toutes les commandes ; livreurs en ligne |
+
+Règles à connaître : le prix est la part fixe + la part au kilomètre (réglages `tarif_fixe_xof` et
+`tarif_km_xof`), arrondi aux 50 F supérieurs ; la livraison exige le code remis au destinataire
+(5 essais maximum) ; un livreur ne peut pas se déconnecter avec une course en cours ; après un
+redémarrage du serveur, les recherches interrompues reprennent et un livreur qui se reconnecte
+retrouve ses courses (un livreur absent est remplacé après `perte_signal_s`).
+
+Pas encore faits : paiement autre qu'en espèces, notification instantanée (le livreur interroge
+`/livreurs/moi/courses`), évaluations des livreurs, commandes urgentes, interfaces Flet.

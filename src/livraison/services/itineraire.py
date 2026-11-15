@@ -33,11 +33,19 @@ class ErreurItineraire(Exception):
 class Itineraire(Protocol):
     async def duree_s(self, depart: Point, arrivee: Point, vehicule: str) -> float: ...
 
+    async def trajet(self, depart: Point, arrivee: Point, vehicule: str) -> tuple[float, float]:
+        """(durée en secondes, distance en mètres) : sert au calcul du prix d'une commande."""
+        ...
+
 
 class ItineraireDroiteLigne:
     async def duree_s(self, depart: Point, arrivee: Point, vehicule: str) -> float:
+        return (await self.trajet(depart, arrivee, vehicule))[0]
+
+    async def trajet(self, depart: Point, arrivee: Point, vehicule: str) -> tuple[float, float]:
+        distance_route = distance_m(depart, arrivee) * FACTEUR_SINUOSITE
         vitesse_ms = VITESSES_KMH.get(vehicule, VITESSES_KMH["moto"]) / 3.6
-        return distance_m(depart, arrivee) * FACTEUR_SINUOSITE / vitesse_ms
+        return distance_route / vitesse_ms, distance_route
 
 
 class ItineraireOSRM:
@@ -59,22 +67,25 @@ class ItineraireOSRM:
     ):
         self.url = url.rstrip("/")
         self._client = client or httpx.AsyncClient(timeout=delai_s)
-        self._cache: OrderedDict[tuple, float] = OrderedDict()
+        self._cache: OrderedDict[tuple, tuple[float, float]] = OrderedDict()
         self._taille_cache = taille_cache
 
     async def duree_s(self, depart: Point, arrivee: Point, vehicule: str) -> float:
+        return (await self.trajet(depart, arrivee, vehicule))[0]
+
+    async def trajet(self, depart: Point, arrivee: Point, vehicule: str) -> tuple[float, float]:
         cle = (round(depart[0], 5), round(depart[1], 5), round(arrivee[0], 5), round(arrivee[1], 5))
         if cle in self._cache:
             self._cache.move_to_end(cle)
-            duree_voiture = self._cache[cle]
+            duree_voiture, distance = self._cache[cle]
         else:
-            duree_voiture = await self._interroger(depart, arrivee)
-            self._cache[cle] = duree_voiture
+            duree_voiture, distance = await self._interroger(depart, arrivee)
+            self._cache[cle] = (duree_voiture, distance)
             if len(self._cache) > self._taille_cache:
                 self._cache.popitem(last=False)
-        return duree_voiture * FACTEUR_VEHICULE.get(vehicule, FACTEUR_VEHICULE["moto"])
+        return duree_voiture * FACTEUR_VEHICULE.get(vehicule, FACTEUR_VEHICULE["moto"]), distance
 
-    async def _interroger(self, depart: Point, arrivee: Point) -> float:
+    async def _interroger(self, depart: Point, arrivee: Point) -> tuple[float, float]:
         # OSRM attend « longitude,latitude », points séparés par « ; ».
         trajet = f"{depart[0]:.6f},{depart[1]:.6f};{arrivee[0]:.6f},{arrivee[1]:.6f}"
         try:
@@ -87,7 +98,8 @@ class ItineraireOSRM:
             raise ErreurItineraire(f"OSRM injoignable ou en erreur : {erreur}") from erreur
         if donnees.get("code") != "Ok" or not donnees.get("routes"):
             raise ErreurItineraire(f"OSRM sans itinéraire : {donnees.get('code')}")
-        return float(donnees["routes"][0]["duration"])
+        route = donnees["routes"][0]
+        return float(route["duration"]), float(route["distance"])
 
     async def fermer(self) -> None:
         await self._client.aclose()
@@ -104,15 +116,23 @@ class ItineraireAvecRepli:
         self._dernier_avertissement = float("-inf")
 
     async def duree_s(self, depart: Point, arrivee: Point, vehicule: str) -> float:
+        return (await self.trajet(depart, arrivee, vehicule))[0]
+
+    async def trajet(self, depart: Point, arrivee: Point, vehicule: str) -> tuple[float, float]:
         try:
-            return await self.principal.duree_s(depart, arrivee, vehicule)
+            return await self.principal.trajet(depart, arrivee, vehicule)
         except ErreurItineraire as erreur:
             self.nb_replis += 1
             maintenant = time.monotonic()
             if maintenant - self._dernier_avertissement > self._silence:
                 journal.warning("Repli sur la ligne droite : %s", erreur)
                 self._dernier_avertissement = maintenant
-            return await self.secours.duree_s(depart, arrivee, vehicule)
+            return await self.secours.trajet(depart, arrivee, vehicule)
+
+    async def fermer(self) -> None:
+        fermer = getattr(self.principal, "fermer", None)
+        if fermer is not None:
+            await fermer()
 
 
 def creer_itineraire(mode: str, osrm_url: str) -> Itineraire:

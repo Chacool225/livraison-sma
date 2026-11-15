@@ -19,12 +19,18 @@ Docker Desktop lancé et les ports 5433, 6390, 5222, 9090, 8000 libres. Cocher c
 - [ ] Réversibilité (base neuve seulement) : `alembic downgrade base` puis `alembic upgrade head`, sans erreur
 
 ## C. Tests automatiques
-- [ ] Sans serveur XMPP : `pytest` → `60 passed, 17 skipped`
-- [ ] Avec `spade run --memory` dans un autre terminal : `pytest` → `77 passed`
+- [ ] Sans serveur XMPP : `pytest` → `73 passed, 26 skipped`
+- [ ] Avec `spade run --memory` dans un autre terminal : `pytest` → `99 passed`
 - [ ] Relancer 3 fois (serveur XMPP relancé avant chaque série) : mêmes résultats, aucun test instable
 - [ ] `ruff check .` → `All checks passed!`
 
 ## D. Parcours de l'API (page `/docs`, `uvicorn livraison.api.main:app`)
+
+Raccourci automatique : lancer le serveur (commande ci-dessus), créer l'administrateur avec
+`python scripts\creer_admin.py "07 00 00 00 00" "Admin"`, puis `python scripts\recette_api.py` : il déroule
+toute cette section et affiche OK ou KO pour chaque ligne (`24/24 vérifications réussies.`).
+Le test de redémarrage de PostgreSQL reste manuel.
+
 - [ ] `GET /sante` → `{"etat":"ok"}`
 - [ ] `python scripts\creer_admin.py "<numéro>" "<nom>"`, connexion avec ce numéro → `GET /moi` : `administrateur`
 - [ ] Client : `demander-code` puis `verifier-code` (nouveau numéro) → `GET /moi` : `client`
@@ -33,6 +39,12 @@ Docker Desktop lancé et les ports 5433, 6390, 5222, 9090, 8000 libres. Cocher c
 - [ ] Modifier le dossier remet la validation en attente
 - [ ] Cas refusés : 5 mauvais codes puis le bon → `429` ; code réutilisé → `400` ; client sur `/admin/livreurs` → `403` ; sans jeton → `401` ; `"role": "administrateur"` à l'inscription → `422`
 - [ ] `docker compose restart postgres`, attendre `healthy` : un jeton déjà obtenu fonctionne encore sur `GET /moi`
+
+## D2. Parcours client -> livreur avec les agents (étape 6)
+- [ ] `spade run --memory` (terminal 1), puis `python -m livraison.api` (terminal 2) : `GET /sante` → `"agents": true`
+- [ ] `python scripts\demo_parcours.py` (terminal 3) → les 7 étapes puis `[OK] Parcours complet réussi`
+- [ ] Arrêter `spade run`, relancer l'API : elle démarre (`"agents": false`) et `POST /commandes` répond `503`
+- [ ] Dans `/docs`, refaire à la main un tour : commander, voir la proposition côté livreur, accepter, suivre l'état côté client
 
 ## E. Agents
 - [ ] `spade run --memory`, puis `python -m livraison.agents.scenario_tp` → `OK : même attribution que le TP.`

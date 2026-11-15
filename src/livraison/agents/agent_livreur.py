@@ -263,6 +263,7 @@ class LivreurAgent(Agent):
                             "commande_id": cid,
                             "enlevement": course.enlevement,
                             "livraison": course.livraison,
+                            "delai_confirmation_s": delai,
                         }
                     ),
                     timeout=delai,

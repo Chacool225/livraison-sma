@@ -112,3 +112,26 @@ def test_choix_du_moteur_par_la_configuration():
     assert isinstance(creer_itineraire("osrm", parametres.osrm_url), ItineraireAvecRepli)
     with pytest.raises(ValueError):
         creer_itineraire("google", parametres.osrm_url)
+
+
+async def test_trajet_donne_aussi_la_distance():
+    osrm, _ = _osrm(_reponse_ok(600.0))
+    duree, distance = await osrm.trajet(PLATEAU, COCODY, "voiture")
+    assert (duree, distance) == (600.0, 5000.0)
+    duree_moto, distance_moto = await osrm.trajet(PLATEAU, COCODY, "moto")
+    assert (
+        duree_moto < duree and distance_moto == 5000.0
+    )  # le véhicule change la durée, pas la route
+
+
+async def test_trajet_en_ligne_droite_et_avec_repli():
+    duree, distance = await ItineraireDroiteLigne().trajet(PLATEAU, COCODY, "moto")
+    assert duree == await ItineraireDroiteLigne().duree_s(PLATEAU, COCODY, "moto")
+    assert 7000 < distance < 9000  # ~6 km à vol d'oiseau x 1,3
+
+    def injoignable(requete):
+        raise httpx.ConnectError("connexion refusée")
+
+    osrm, _ = _osrm(injoignable)
+    repli = ItineraireAvecRepli(osrm, ItineraireDroiteLigne())
+    assert await repli.trajet(PLATEAU, COCODY, "moto") == (duree, distance)
