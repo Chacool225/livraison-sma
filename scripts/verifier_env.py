@@ -74,6 +74,21 @@ def verifier_xmpp(p) -> None:
         noter("Serveur XMPP", False, "injoignable : lancez « spade run » dans un autre terminal")
 
 
+def verifier_interface() -> None:
+    """Fenêtre et mode navigateur de Flet : nécessaires seulement pour lancer l'interface."""
+    manquants = []
+    for module in ("flet_desktop", "flet_web"):
+        try:
+            __import__(module)
+        except ImportError:
+            manquants.append(module.replace("_", "-"))
+    noter(
+        "Interface Flet (optionnel)",
+        not manquants,
+        "" if not manquants else f'manque {", ".join(manquants)} : pip install "flet[all]"',
+    )
+
+
 async def verifier_osrm(p) -> None:
     try:
         import httpx
@@ -108,6 +123,7 @@ async def main() -> int:
         await verifier_redis(p)
         verifier_xmpp(p)
         await verifier_osrm(p)
+        verifier_interface()
 
     echecs = 0
     for nom, ok, detail in RESULTATS:

@@ -49,6 +49,18 @@ def _wkt(point: Point) -> WKTElement:
 
 
 # --------------------------------------------------------------------------- côté client
+async def estimer(
+    session: AsyncSession, flotte: Flotte, point_enlevement: Point, point_livraison: Point
+) -> tuple[float, float, int]:
+    """(durée en s, distance en m, prix en F) d'une course, sans rien enregistrer."""
+    duree, distance = await flotte.itineraire.trajet(point_enlevement, point_livraison, "moto")
+    if distance < DISTANCE_MIN_M:
+        raise ErreurMetier(422, "L'enlèvement et la livraison sont au même endroit.")
+    reglages = await commandes.lire_reglages(session, flotte.dispatcher.reglages_forces)
+    prix = calculer_prix(distance, reglages["tarif_fixe_xof"], reglages["tarif_km_xof"])
+    return duree, distance, prix
+
+
 async def creer_commande(
     session: AsyncSession,
     flotte: Flotte,
@@ -73,11 +85,7 @@ async def creer_commande(
         except ValueError as erreur:
             raise ErreurMetier(422, f"Téléphone du destinataire : {erreur}") from erreur
 
-    duree, distance = await flotte.itineraire.trajet(point_enlevement, point_livraison, "moto")
-    if distance < DISTANCE_MIN_M:
-        raise ErreurMetier(422, "L'enlèvement et la livraison sont au même endroit.")
-    reglages = await commandes.lire_reglages(session, flotte.dispatcher.reglages_forces)
-    prix = calculer_prix(distance, reglages["tarif_fixe_xof"], reglages["tarif_km_xof"])
+    duree, distance, prix = await estimer(session, flotte, point_enlevement, point_livraison)
 
     commande = Commande(
         client_id=client.id,
@@ -309,3 +317,48 @@ async def signaler_etape(
         raise ErreurMetier(409, "Vous êtes hors ligne : passez en ligne d'abord.") from erreur
     except ValueError as erreur:
         raise ErreurMetier(409, "Course inconnue de votre session : repassez en ligne.") from erreur
+
+
+# --------------------------------------------------------------------------- supervision
+ETATS_TERMINES = (EtatCommande.LIVREE, EtatCommande.CLOTUREE, EtatCommande.ANNULEE)
+
+
+async def alertes_ouvertes(session: AsyncSession, limite: int = 50) -> list[dict]:
+    """Commandes signalées au répartiteur et pas encore résolues (une alerte par commande)."""
+    lignes = await session.execute(
+        select(Evenement, Commande)
+        .join(Commande, Evenement.commande_id == Commande.id)
+        .where(Evenement.type == "alerte_repartiteur", Commande.etat.not_in(ETATS_TERMINES))
+        .order_by(Evenement.id.desc())
+        .limit(limite * 4)
+    )
+    vues: dict[uuid.UUID, dict] = {}
+    for evenement, commande in lignes:
+        if commande.id not in vues and len(vues) < limite:
+            vues[commande.id] = {
+                "commande_id": commande.id,
+                "numero": commande.numero,
+                "etat": commande.etat,
+                "raison": (evenement.detail or {}).get("raison"),
+                "cree_le": evenement.horodatage,
+            }
+    return list(vues.values())
+
+
+async def relancer_commande(
+    session: AsyncSession, flotte: Flotte, utilisateur: Utilisateur, commande_id: uuid.UUID
+) -> Commande:
+    """Le répartiteur relance la recherche d'un livreur pour une commande restée sans livreur."""
+    commande = await session.get(Commande, commande_id)
+    if commande is None:
+        raise ErreurMetier(404, "Commande introuvable.")
+    if commande.etat != EtatCommande.EN_RECHERCHE:
+        raise ErreurMetier(409, f"Relance impossible : la commande est « {commande.etat.value} ».")
+    if str(commande.id) in flotte.dispatcher.conversations:
+        raise ErreurMetier(409, "Une recherche est déjà en cours pour cette commande.")
+    await commandes.journaliser(
+        session, commande.id, "relance_manuelle", f"{utilisateur.role.value}:{utilisateur.id}"
+    )
+    flotte.dispatcher.exclusions.pop(str(commande.id), None)  # on peut re-solliciter tout le monde
+    await flotte.soumettre(commande.id)
+    return commande

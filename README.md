@@ -459,3 +459,40 @@ retrouve ses courses (un livreur absent est remplacé après `perte_signal_s`).
 
 Pas encore faits : paiement autre qu'en espèces, notification instantanée (le livreur interroge
 `/livreurs/moi/courses`), évaluations des livreurs, commandes urgentes, interfaces Flet.
+
+## Étape 7 : l'application (interface Flet)
+
+Une seule application, avec trois espaces selon le rôle : **client** (commander avec estimation du
+prix, suivre, annuler), **livreur** (dossier, mise en ligne, propositions, étapes de la livraison) et
+**supervision** (administrateur et répartiteur : alertes, dossiers à valider, commandes, livreurs en
+ligne).
+
+Installation du moteur d'affichage de Flet, une seule fois (**sans** relancer `pip install -r`, qui
+réinstallerait `winloop`) :
+
+```powershell
+pip install "flet[all]==1.1.2"
+python scripts\verifier_env.py       # la ligne « Interface Flet » doit être [OK]
+```
+
+Lancement (le serveur XMPP et l'API doivent déjà tourner : étape 6) :
+
+```powershell
+python -m livraison.interfaces                       # fenêtre de bureau
+python -m livraison.interfaces --web                 # dans le navigateur : http://127.0.0.1:8550
+python -m livraison.interfaces --web --hote 0.0.0.0  # accessible depuis un téléphone du même réseau
+```
+
+Pour essayer le parcours à plusieurs, ouvrir **trois fenêtres** (ou trois onglets en mode `--web`) :
+un client, un livreur, l'administrateur (créé avec `scripts\creer_admin.py`). Le code SMS est
+pré-rempli (mode développement). Le livreur choisit sa position parmi les communes d'Abidjan ; elle est
+renvoyée automatiquement toutes les 20 s. Les lieux sont des centres de communes approximatifs
+(`interfaces/lieux.py`) ; pour un autre endroit, choisir « Autre lieu » et saisir les coordonnées.
+
+Nouvelles routes de l'API pour l'interface : `POST /commandes/estimation`, `GET /admin/alertes`,
+`POST /admin/commandes/{id}/relance` ; les dossiers et les livreurs en ligne affichent maintenant le
+nom et le téléphone.
+
+Limites : pas de carte (positions affichées en texte), pas de notification instantanée (l'écran
+s'actualise toutes les 2 à 5 s), pas de mémorisation de la session (il faut se reconnecter à chaque
+ouverture).

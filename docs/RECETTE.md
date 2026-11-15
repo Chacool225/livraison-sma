@@ -19,8 +19,8 @@ Docker Desktop lancé et les ports 5433, 6390, 5222, 9090, 8000 libres. Cocher c
 - [ ] Réversibilité (base neuve seulement) : `alembic downgrade base` puis `alembic upgrade head`, sans erreur
 
 ## C. Tests automatiques
-- [ ] Sans serveur XMPP : `pytest` → `73 passed, 26 skipped`
-- [ ] Avec `spade run --memory` dans un autre terminal : `pytest` → `99 passed`
+- [ ] Sans serveur XMPP : `pytest` → `80 passed, 34 skipped`
+- [ ] Avec `spade run --memory` dans un autre terminal : `pytest` → `114 passed`
 - [ ] Relancer 3 fois (serveur XMPP relancé avant chaque série) : mêmes résultats, aucun test instable
 - [ ] `ruff check .` → `All checks passed!`
 
@@ -45,6 +45,19 @@ Le test de redémarrage de PostgreSQL reste manuel.
 - [ ] `python scripts\demo_parcours.py` (terminal 3) → les 7 étapes puis `[OK] Parcours complet réussi`
 - [ ] Arrêter `spade run`, relancer l'API : elle démarre (`"agents": false`) et `POST /commandes` répond `503`
 - [ ] Dans `/docs`, refaire à la main un tour : commander, voir la proposition côté livreur, accepter, suivre l'état côté client
+
+## D3. Application Flet (étape 7)
+- [ ] `pip install "flet[all]==1.1.2"` puis `python scripts\verifier_env.py` → ligne « Interface Flet » en `[OK]`
+- [ ] `python -m livraison.interfaces --web` : la page de connexion s'affiche dans le navigateur
+- [ ] Connexion avec un nouveau numéro : le code est pré-rempli ; rôle « Livreur » + un nom → espace livreur
+- [ ] Livreur : « Mon dossier » → envoyer ; l'administrateur (autre onglet) le valide dans « Dossiers »
+- [ ] Livreur : choisir « Plateau », passer « En ligne » ; l'administrateur le voit dans « En ligne »
+- [ ] Client (3e onglet) : Plateau → Cocody, « Estimer le prix » puis « Commander » : le code de remise s'affiche
+- [ ] Livreur : la proposition apparaît avec un compte à rebours ; « Accepter » ; le client voit son livreur
+- [ ] Livreur : « J'ai enlevé le colis », « Je pars livrer », « Colis livré » avec un faux code (refusé), puis le bon
+- [ ] Client : l'état passe à « Livrée » ; administrateur, onglet « Commandes » : la commande est « Livrée »
+- [ ] Sans livreur en ligne : la commande apparaît dans « Alertes » ; « Relancer la recherche » et « Annuler » fonctionnent
+- [ ] Fermer l'onglet du livreur : le serveur ne plante pas
 
 ## E. Agents
 - [ ] `spade run --memory`, puis `python -m livraison.agents.scenario_tp` → `OK : même attribution que le TP.`

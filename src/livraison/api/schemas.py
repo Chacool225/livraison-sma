@@ -68,6 +68,12 @@ class DossierLivreurSortie(DossierLivreur):
     statut_validation: StatutValidation
     valide_le: datetime | None
     note: float | None
+    en_ligne: bool = False
+
+
+class DossierAValider(DossierLivreurSortie):
+    nom: str | None
+    telephone: str
 
 
 class DecisionValidation(BaseModel):
@@ -149,8 +155,29 @@ class CommandeResume(BaseModel):
     cree_le: datetime
 
 
+class DemandeEstimation(BaseModel):
+    enlevement: Coordonnees
+    livraison: Coordonnees
+
+
+class Estimation(BaseModel):
+    prix: int = Field(description="Francs CFA")
+    distance_m: int
+    duree_estimee_s: int
+
+
+class AlerteSortie(BaseModel):
+    commande_id: uuid.UUID
+    numero: int
+    etat: EtatCommande
+    raison: str | None
+    cree_le: datetime
+
+
 class AgentEnLigne(BaseModel):
     livreur_id: str
+    nom: str | None = None
+    telephone: str | None = None
     longitude: float
     latitude: float
     age_position_s: float | None

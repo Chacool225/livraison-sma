@@ -5,7 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from livraison.api.deps import ADMIN_SEUL, LIVREUR_SEUL
-from livraison.api.schemas import DecisionValidation, DossierLivreur, DossierLivreurSortie
+from livraison.api.schemas import (
+    DecisionValidation,
+    DossierAValider,
+    DossierLivreur,
+    DossierLivreurSortie,
+)
 from livraison.db.modeles import Livreur, StatutValidation, Utilisateur
 from livraison.db.session import obtenir_session
 from livraison.services import comptes
@@ -35,16 +40,26 @@ async def mon_dossier(
     return livreur
 
 
-@router.get("/admin/livreurs", response_model=list[DossierLivreurSortie])
+@router.get("/admin/livreurs", response_model=list[DossierAValider])
 async def lister_dossiers(
     statut: StatutValidation = Query(StatutValidation.EN_ATTENTE),
     _: Utilisateur = Depends(ADMIN_SEUL),
     session: AsyncSession = Depends(obtenir_session),
 ):
-    resultat = await session.scalars(
-        select(Livreur).where(Livreur.statut_validation == statut).order_by(Livreur.cree_le)
+    lignes = await session.execute(
+        select(Livreur, Utilisateur)
+        .join(Utilisateur, Utilisateur.id == Livreur.utilisateur_id)
+        .where(Livreur.statut_validation == statut)
+        .order_by(Livreur.cree_le)
     )
-    return list(resultat)
+    return [
+        {
+            **DossierLivreurSortie.model_validate(livreur).model_dump(),
+            "nom": compte.nom,
+            "telephone": compte.telephone,
+        }
+        for livreur, compte in lignes
+    ]
 
 
 @router.post("/admin/livreurs/{livreur_id}/validation", response_model=DossierLivreurSortie)

@@ -13,6 +13,6 @@ geoalchemy2>=0.15
 alembic>=1.13
 redis>=5.0
 # Interfaces graphiques
-flet>=1.0,<2
+flet[all]>=1.0,<2
 # Optimisation de tournées
 ortools>=9.10

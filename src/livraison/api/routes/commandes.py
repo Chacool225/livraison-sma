@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from livraison.agents.flotte import Flotte
@@ -13,9 +14,12 @@ from livraison.api.deps import (
 )
 from livraison.api.schemas import (
     AgentEnLigne,
+    AlerteSortie,
     CommandeCreee,
     CommandeDetail,
     CommandeResume,
+    DemandeEstimation,
+    Estimation,
     NouvelleCommande,
 )
 from livraison.db.modeles import EtatCommande, ModePaiement, Utilisateur
@@ -23,6 +27,23 @@ from livraison.db.session import obtenir_session
 from livraison.services import livraisons
 
 router = APIRouter(tags=["commandes"])
+
+
+@router.post("/commandes/estimation", response_model=Estimation)
+async def estimer_une_commande(
+    demande: DemandeEstimation,
+    _: Utilisateur = Depends(CLIENT_SEUL),
+    session: AsyncSession = Depends(obtenir_session),
+    flotte: Flotte = Depends(obtenir_flotte),
+):
+    """Prix, distance et durée d'une course, avant de commander (rien n'est enregistré)."""
+    duree, distance, prix = await livraisons.estimer(
+        session,
+        flotte,
+        (demande.enlevement.longitude, demande.enlevement.latitude),
+        (demande.livraison.longitude, demande.livraison.latitude),
+    )
+    return {"prix": prix, "distance_m": round(distance), "duree_estimee_s": round(duree)}
 
 
 @router.post("/commandes", response_model=CommandeCreee, status_code=201)
@@ -103,16 +124,51 @@ async def toutes_les_commandes(
 
 @router.get("/admin/agents", response_model=list[AgentEnLigne])
 async def livreurs_en_ligne(
-    _: Utilisateur = Depends(SUPERVISEUR), flotte: Flotte = Depends(obtenir_flotte)
+    _: Utilisateur = Depends(SUPERVISEUR),
+    flotte: Flotte = Depends(obtenir_flotte),
+    session: AsyncSession = Depends(obtenir_session),
 ):
     """Livreurs actuellement en ligne, d'après l'annuaire des agents."""
+    en_ligne = flotte.livreurs_en_ligne()
+    comptes = {
+        str(c.id): c
+        for c in await session.scalars(
+            select(Utilisateur).where(
+                Utilisateur.id.in_([uuid.UUID(a["livreur_id"]) for a in en_ligne])
+            )
+        )
+    }
     return [
         {
             "livreur_id": a["livreur_id"],
+            "nom": comptes[a["livreur_id"]].nom if a["livreur_id"] in comptes else None,
+            "telephone": comptes[a["livreur_id"]].telephone if a["livreur_id"] in comptes else None,
             "longitude": a["position"][0],
             "latitude": a["position"][1],
             "age_position_s": a["age_position_s"],
             "vehicule": a["vehicule"],
         }
-        for a in flotte.livreurs_en_ligne()
+        for a in en_ligne
     ]
+
+
+@router.get("/admin/alertes", response_model=list[AlerteSortie])
+async def alertes(
+    limite: int = Query(50, ge=1, le=200),
+    _: Utilisateur = Depends(SUPERVISEUR),
+    session: AsyncSession = Depends(obtenir_session),
+):
+    """Commandes signalées au répartiteur et pas encore résolues."""
+    return await livraisons.alertes_ouvertes(session, limite)
+
+
+@router.post("/admin/commandes/{commande_id}/relance", response_model=CommandeDetail)
+async def relancer(
+    commande_id: uuid.UUID,
+    utilisateur: Utilisateur = Depends(SUPERVISEUR),
+    session: AsyncSession = Depends(obtenir_session),
+    flotte: Flotte = Depends(obtenir_flotte),
+):
+    """Relance la recherche d'un livreur pour une commande restée sans livreur."""
+    commande = await livraisons.relancer_commande(session, flotte, utilisateur, commande_id)
+    return await livraisons.detail_commande(session, flotte, commande)
